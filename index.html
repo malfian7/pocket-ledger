@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pocket Ledger</title>
+  <meta name="description" content="Track monthly expenses, income and savings. Runs in your browser with no database.">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Pocket Ledger">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+
+<div class="shell">
+  <aside class="side glass">
+    <div class="brand">
+      <div class="brand-mark"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></div>
+      <div><div class="brand-name">Pocket Ledger</div><div class="brand-sub">Monthly money plan</div></div>
+    </div>
+    <nav class="nav" aria-label="Sections">
+      <span class="nav-pill" aria-hidden="true"></span>
+      <a href="#dashboard" data-view="dashboard" title="Dashboard"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg><span class="short">Home</span><span class="lbl">Dashboard</span></a>
+      <a href="#expenses" data-view="expenses" title="Expenses"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span class="short">Spend</span><span class="lbl">Expenses</span></a>
+      <a href="#daily" data-view="daily" title="Daily breakdown"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h2M14 14h2M8 17h2"/></svg><span class="short">Daily</span><span class="lbl">Daily breakdown</span></a>
+      <a href="#income" data-view="income" title="Income"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 7a2 2 0 0 1 2-2h11v2M16 13.5h2"/></svg><span class="short">Income</span><span class="lbl">Income</span></a>
+      <a href="#savings" data-view="savings" title="Savings"><svg class="ico" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg><span class="short">Savings</span><span class="lbl">Savings</span></a>
+      <a href="#reports" data-view="reports" title="Reports"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9.5 15.5L12 18l2.5-2.5"/></svg><span class="short">Reports</span><span class="lbl">Reports</span></a>
+      <a href="#setup" data-view="setup" title="Budget & settings"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="short">Setup</span><span class="lbl">Budget &amp; settings</span></a>
+    </nav>
+    <div class="side-note"><b>No account, no database</b>Your data is saved in this browser only. Download a backup from Reports to move it to another device.</div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div>
+        <div class="eyebrow" id="eyebrow">Overview</div>
+        <h1 id="viewTitle">Dashboard</h1>
+      </div>
+      <div class="top-actions">
+        <div class="month glass" role="group" aria-label="Choose month">
+          <button class="icon-btn" id="prevMonth" aria-label="Previous month"><svg class="ico" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <div class="month-label num" id="monthLabel" aria-live="polite">October 2026</div>
+          <button class="icon-btn" id="nextMonth" aria-label="Next month"><svg class="ico" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <button class="btn btn-primary" id="addBtn"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add expense</button>
+      </div>
+    </header>
+
+    <!-- DASHBOARD -->
+    <section class="view" id="view-dashboard">
+      <div class="card glass" id="onboard" hidden>
+        <div class="card-head"><h2 class="card-title">Start your month</h2><button class="btn btn-ghost btn-sm" id="hideOnboard">Hide</button></div>
+        <p class="small" style="margin:-8px 0 16px">Four quick steps to get your first calculation. Your data stays in this browser.</p>
+        <div class="steps" id="steps"></div>
+      </div>
+      <div class="alert" id="budgetAlert" hidden role="alert">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17h.01"/></svg>
+        <div><p class="alert-title" id="budgetAlertTitle"></p><p id="budgetAlertText"></p></div>
+        <a class="btn btn-ghost btn-sm alert-act" href="#setup">Adjust budget</a>
+      </div>
+      <div class="alert over" id="incomeAlert" hidden role="alert">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17h.01"/></svg>
+        <div><p class="alert-title" id="incomeAlertTitle">Spending is higher than income</p><p id="incomeAlertText"></p></div>
+        <a class="btn btn-ghost btn-sm alert-act" href="#income">Review income</a>
+      </div>
+
+      <div class="hero glass">
+        <div>
+          <div class="hero-meta"><span class="hero-label" id="heroLabel">Spent in October 2026</span><span class="pill none" id="statusPill">No budget</span></div>
+          <div class="hero-amount num" id="heroAmount">Rp 0</div>
+          <div class="hero-of" id="heroOf"></div>
+          <div class="meter" id="meter">
+            <div class="meter-track"><div class="meter-fill" id="meterFill"></div></div>
+            <div class="meter-tick" title="80% warning line" aria-hidden="true"></div>
+            <div class="meter-scale num"><span>0</span><span id="meterPct">0% used</span><span id="meterMax"></span></div>
+          </div>
+          <div class="message" id="heroMessage"></div>
+        </div>
+        <div class="receipt" aria-label="Monthly spending calculation">
+          <div class="receipt-head"><strong>Spending calculation</strong><span id="rcMonth">October 2026</span></div>
+          <div class="r-line"><span>Price before discount</span><span id="rcOriginal">0</span></div>
+          <div class="r-line minus"><span>Discounts</span><span id="rcDiscount">0</span></div>
+          <div class="r-line total"><span>You paid</span><span id="rcPaid">0</span></div>
+          <div class="r-sep"></div>
+          <div class="r-line"><span>Monthly budget</span><span id="rcBudget">0</span></div>
+          <div class="r-line result" id="rcResultLine"><span id="rcResultLabel">Remaining</span><span id="rcResult">0</span></div>
+          <div class="r-foot" id="rcFoot">0 purchases</div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title">Money in &amp; out</h2><a class="card-sub" href="#income">Add income</a></div>
+        <div class="flow">
+          <div class="equation" id="equation"></div>
+          <div>
+            <div class="flowbar" id="flowbar" aria-hidden="true"></div>
+            <div class="legend" id="flowLegend"></div>
+            <div class="message" id="flowMessage"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat glass"><div class="stat-label">Saved by discounts</div><div class="stat-value num" id="stSaved">0</div><div class="stat-note" id="stSavedNote"></div></div>
+        <div class="stat glass"><div class="stat-label">Purchases</div><div class="stat-value num" id="stCount">0</div><div class="stat-note" id="stCountNote"></div></div>
+        <div class="stat glass"><div class="stat-label">Average per day</div><div class="stat-value num" id="stDaily">0</div><div class="stat-note" id="stDailyNote"></div></div>
+        <div class="stat glass"><div class="stat-label">Vs last month</div><div class="stat-value num" id="stDelta">0</div><div class="stat-note" id="stDeltaNote"></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card glass">
+          <div class="card-head"><h2 class="card-title">Daily spending</h2><a class="card-sub" href="#daily">Tap a bar for details · Daily breakdown</a></div>
+          <div class="chart" id="dailyChart"></div>
+        </div>
+        <div class="card glass">
+          <div class="card-head"><h2 class="card-title">Where it was bought</h2><span class="card-sub">By source</span></div>
+          <div class="src" id="sourceList"></div>
+        </div>
+      </div>
+
+      <div class="grid-2b">
+        <div class="card glass">
+          <div class="card-head"><h2 class="card-title">Latest expenses</h2><a href="#expenses" class="card-sub">See all</a></div>
+          <div class="list" id="recentList"></div>
+        </div>
+        <div class="card glass">
+          <div class="card-head"><h2 class="card-title">Best discounts</h2><span class="card-sub">Biggest savings this month</span></div>
+          <div class="list" id="dealList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EXPENSES -->
+    <section class="view" id="view-expenses" hidden>
+      <div class="card glass" id="entryCard">
+        <div class="card-head"><h2 class="card-title" id="formTitle">Add an expense</h2><span class="card-sub" id="formSub">Fill in what you bought and what you actually paid</span></div>
+        <div class="entry">
+          <form class="form" id="expenseForm" novalidate>
+            <div class="field full">
+              <label for="fItem">What did you buy?</label>
+              <input class="input" id="fItem" type="text" maxlength="120" placeholder="e.g. Running shoes, weekly groceries" autocomplete="off">
+              <div class="err" id="eItem"></div>
+            </div>
+            <div class="field">
+              <label for="fSource">Bought from</label>
+              <select class="select" id="fSource"></select>
+            </div>
+            <div class="field">
+              <label for="fStore">Store or app <span class="hint">(optional)</span></label>
+              <input class="input" id="fStore" type="text" maxlength="60" list="storeList" placeholder="e.g. Tokopedia, Indomaret" autocomplete="off">
+              <datalist id="storeList"></datalist>
+            </div>
+            <div class="field">
+              <label for="fDate">Date</label>
+              <input class="input" id="fDate" type="date">
+              <div class="err" id="eDate"></div>
+            </div>
+            <div class="field">
+              <label for="fOriginal">Starting price <span class="hint">(before discount)</span></label>
+              <div class="money"><span class="cur" data-cur>Rp</span><input class="input" id="fOriginal" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></div>
+              <div class="err" id="eOriginal"></div>
+            </div>
+            <div class="field full">
+              <label for="fFinal">Final price <span class="hint">(what you paid after discount)</span></label>
+              <div class="money"><span class="cur" data-cur>Rp</span><input class="input" id="fFinal" type="text" inputmode="decimal" placeholder="Leave empty if there was no discount" autocomplete="off"></div>
+              <div class="chips" id="discChips" aria-label="Quick discount">
+                <button type="button" class="chip" data-disc="0">No discount</button>
+                <button type="button" class="chip" data-disc="10">10% off</button>
+                <button type="button" class="chip" data-disc="20">20% off</button>
+                <button type="button" class="chip" data-disc="25">25% off</button>
+                <button type="button" class="chip" data-disc="50">50% off</button>
+              </div>
+              <div class="err" id="eFinal"></div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" id="saveBtn">Add expense</button>
+              <button class="btn btn-ghost" type="button" id="cancelEdit" hidden>Cancel editing</button>
+              <button class="btn btn-ghost" type="button" id="resetForm">Clear form</button>
+            </div>
+          </form>
+          <div class="slip-wrap">
+            <div class="receipt" aria-live="polite">
+              <div class="receipt-head"><strong>This purchase</strong><span id="slipItem">—</span></div>
+              <div class="r-line"><span>Starting price</span><span id="slOriginal">0</span></div>
+              <div class="r-line minus"><span id="slDiscLabel">Discount</span><span id="slDiscount">0</span></div>
+              <div class="r-line total"><span>You pay</span><span id="slFinal">0</span></div>
+              <div class="r-sep"></div>
+              <div class="r-line"><span>Spent that day</span><span id="slDay">—</span></div>
+              <div class="r-line"><span>Budget left now</span><span id="slLeftNow">—</span></div>
+              <div class="r-line result" id="slAfterLine"><span>Left after this</span><span id="slAfter">—</span></div>
+            </div>
+            <div class="slip-msg" id="slipMsg">Type a starting price and a final price. The discount and your budget impact are calculated for you.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title" id="tableTitle">October 2026 expenses</h2><span class="card-sub" id="tableSub"></span></div>
+        <div class="tools">
+          <input class="input" id="search" type="search" placeholder="Search item or store" aria-label="Search expenses">
+          <select class="select" id="filterSource" aria-label="Filter by source"></select>
+          <select class="select" id="sortBy" aria-label="Sort expenses">
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="amount-desc">Highest paid</option>
+            <option value="saved-desc">Biggest discount</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Item</th><th>Bought from</th><th class="r">Starting price</th><th class="r">Discount</th><th class="r">Final price</th><th class="r"><span class="muted">Actions</span></th></tr></thead>
+            <tbody id="tbody"></tbody>
+            <tfoot id="tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- DAILY -->
+    <section class="view" id="view-daily" hidden>
+      <div class="stats">
+        <div class="stat glass"><div class="stat-label">Daily limit</div><div class="stat-value num" id="dLimit">—</div><div class="stat-note" id="dLimitNote"></div></div>
+        <div class="stat glass"><div class="stat-label">Average per day</div><div class="stat-value num" id="dAvg">0</div><div class="stat-note" id="dAvgNote"></div></div>
+        <div class="stat glass"><div class="stat-label">Highest day</div><div class="stat-value num" id="dMax">0</div><div class="stat-note" id="dMaxNote"></div></div>
+        <div class="stat glass"><div class="stat-label">Days over the limit</div><div class="stat-value num" id="dOver">0</div><div class="stat-note" id="dOverNote"></div></div>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title" id="dailyTitle">Day by day</h2>
+          <label class="toggle"><input type="checkbox" id="hideEmpty"> Hide days without spending</label>
+        </div>
+        <p class="small" id="dailyIntro" style="margin:-6px 0 14px"></p>
+        <div class="table-wrap">
+          <table class="daygrid">
+            <thead><tr><th>Date</th><th class="r">Purchases</th><th class="r">Starting price</th><th class="r">Discount</th><th class="r">Paid</th><th class="r">Month so far</th><th>Vs daily limit</th><th class="r"><span class="muted">Details</span></th></tr></thead>
+            <tbody id="dayBody"></tbody>
+            <tfoot id="dayFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- INCOME -->
+    <section class="view" id="view-income" hidden>
+      <div class="kpis">
+        <div class="kpi glass"><div class="stat-label">Income this month</div><div class="stat-value num" id="iTotal">0</div><div class="stat-note" id="iTotalNote"></div></div>
+        <div class="kpi glass"><div class="stat-label">Spent</div><div class="stat-value num" id="iSpent">0</div><div class="stat-note" id="iSpentNote"></div></div>
+        <div class="kpi glass"><div class="stat-label">Left after spending &amp; savings</div><div class="stat-value num" id="iLeft">0</div><div class="stat-note" id="iLeftNote"></div></div>
+      </div>
+      <div class="card glass" id="incomeCard">
+        <div class="card-head"><h2 class="card-title" id="incFormTitle">Add income</h2><span class="card-sub">Add each source separately — salary, side jobs, bonuses</span></div>
+        <div class="split">
+          <form class="form" id="incomeForm" novalidate>
+            <div class="field">
+              <label for="iSource">Type of income</label>
+              <select class="select" id="iSource">
+                <option>Salary</option><option>Freelance / side job</option><option>Business</option><option>Bonus / THR</option><option>Investment returns</option><option>Gift / transfer</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="iDate">Date received</label>
+              <input class="input" id="iDate" type="date">
+              <div class="err" id="eiDate"></div>
+            </div>
+            <div class="field full">
+              <label for="iNote">Description <span class="hint">(optional)</span></label>
+              <input class="input" id="iNote" type="text" maxlength="80" placeholder="e.g. October salary, logo design project" autocomplete="off">
+            </div>
+            <div class="field full">
+              <label for="iAmount">Amount received</label>
+              <div class="money"><span class="cur" data-cur>Rp</span><input class="input" id="iAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></div>
+              <div class="err" id="eiAmount"></div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" id="incSave">Add income</button>
+              <button class="btn btn-ghost" type="button" id="incCancel" hidden>Cancel editing</button>
+            </div>
+          </form>
+          <div class="slip-wrap">
+            <div class="receipt">
+              <div class="receipt-head"><strong>Can income cover it?</strong><span id="incMonth">October 2026</span></div>
+              <div class="r-line"><span>Total income</span><span id="ciIncome">0</span></div>
+              <div class="r-line"><span>Spending</span><span id="ciSpend">0</span></div>
+              <div class="r-line"><span>Savings set aside</span><span id="ciSave">0</span></div>
+              <div class="r-line total"><span id="ciLeftLbl">Left over</span><span id="ciLeft">0</span></div>
+            </div>
+            <div class="slip-msg" id="incMsg"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title" id="incTableTitle">Income in October 2026</h2><span class="card-sub" id="incTableSub"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="r">Amount</th><th class="r">Share</th><th class="r"><span class="muted">Actions</span></th></tr></thead>
+            <tbody id="incBody"></tbody>
+            <tfoot id="incFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SAVINGS -->
+    <section class="view" id="view-savings" hidden>
+      <div class="kpis">
+        <div class="kpi glass"><div class="stat-label">Saved this month</div><div class="stat-value num" id="sMonth">0</div>
+          <div class="target"><div class="meter-track"><div class="meter-fill" id="sTargetFill"></div></div><div class="target-note num"><span id="sTargetPct">0% of income</span><span id="sTargetGoal"></span></div></div>
+        </div>
+        <div class="kpi glass"><div class="stat-label">Still free to save</div><div class="stat-value num" id="sFree">0</div><div class="stat-note" id="sFreeNote"></div></div>
+        <div class="kpi glass"><div class="stat-label">Total saved, all months</div><div class="stat-value num" id="sAll">0</div><div class="stat-note" id="sAllNote"></div></div>
+      </div>
+
+      <div class="card glass" id="saveCard">
+        <div class="card-head"><h2 class="card-title">Set money aside</h2><span class="card-sub">Record money you move from income into savings</span></div>
+        <div class="split">
+          <form class="form" id="saveForm" novalidate>
+            <div class="field">
+              <label for="svType">Where</label>
+              <select class="select" id="svType"></select>
+            </div>
+            <div class="field" id="svFxWrap" hidden>
+              <label for="svFx">Currency</label>
+              <select class="select" id="svFx"></select>
+            </div>
+            <div class="field">
+              <label for="svDate">Date</label>
+              <input class="input" id="svDate" type="date">
+              <div class="err" id="esvDate"></div>
+            </div>
+            <div class="field full">
+              <label for="svAmount">Amount in rupiah</label>
+              <div class="money"><span class="cur">Rp</span><input class="input" id="svAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></div>
+              <div class="chips" id="svChips"></div>
+              <div class="err" id="esvAmount"></div>
+            </div>
+            <div class="field full">
+              <label for="svNote">Note <span class="hint">(optional)</span></label>
+              <input class="input" id="svNote" type="text" maxlength="80" placeholder="e.g. Emergency fund, Hajj savings, SBR015T2" autocomplete="off">
+            </div>
+            <div class="form-actions"><button class="btn btn-primary" type="submit">Add to savings</button></div>
+          </form>
+          <div class="slip-wrap">
+            <div class="receipt">
+              <div class="receipt-head"><strong>Savings estimate</strong><span id="svHead">—</span></div>
+              <div id="svEstimate"></div>
+            </div>
+            <div class="slip-msg" id="svMsg"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title">Where to save</h2><span class="card-sub" id="marketAsOf"></span></div>
+        <div class="instruments" id="instruments"></div>
+        <p class="disclaimer" style="margin-top:16px">For information only, not financial advice. Prices and rates change daily — confirm them on the official source before you buy. Figures were collected on 27 October 2026.</p>
+      </div>
+
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title">Other currencies vs rupiah</h2><button class="btn btn-ghost btn-sm" data-detail="fx">View details</button></div>
+        <div class="fx" id="fxStrip"></div>
+      </div>
+
+      <div class="view-stack">
+        <div class="card glass">
+          <div class="card-head"><h2 class="card-title" id="svTableTitle">Savings in October 2026</h2><span class="card-sub" id="svTableSub"></span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Where</th><th>Note</th><th class="r">Amount</th><th class="r">Estimate</th><th class="r"><span class="muted">Actions</span></th></tr></thead>
+              <tbody id="svBody"></tbody>
+              <tfoot id="svFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+        <div class="card glass">
+          <div class="card-head"><h2 class="card-title">All savings by type</h2><span class="card-sub">Every month combined</span></div>
+          <div class="src" id="svByType"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section class="view" id="view-reports" hidden>
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title">Download your results</h2>
+          <div class="seg" role="group" aria-label="What to include">
+            <button type="button" id="scopeMonth" aria-pressed="true">This month</button>
+            <button type="button" id="scopeAll" aria-pressed="false">All months</button>
+          </div>
+        </div>
+        <p class="small" id="scopeNote" style="margin-bottom:16px"></p>
+        <div class="tiles">
+          <div class="tile"><span class="ext">.xlsx</span><h3>Excel workbook</h3><p>Sheets for the summary, every expense, the day-by-day breakdown, income and savings. Best for your own calculations.</p><div><button class="btn btn-primary btn-sm" id="dlXlsx">Download Excel</button></div></div>
+          <div class="tile"><span class="ext">.html → PDF</span><h3>Printable report</h3><p>The calculation, the result message, daily totals and every entry. Open it in your browser, then choose Print → Save as PDF.</p><div><button class="btn btn-ghost btn-sm" id="dlReport">Download report</button></div></div>
+          <div class="tile"><span class="ext">.csv</span><h3>CSV of expenses</h3><p>Plain table of expenses for Google Sheets or other apps.</p><div><button class="btn btn-ghost btn-sm" id="dlCsv">Download CSV</button></div></div>
+          <div class="tile"><span class="ext">.json</span><h3>Backup</h3><p>Everything in the app: expenses, income, savings, budget and settings. Use it to restore or move to another browser.</p><div class="row"><button class="btn btn-ghost btn-sm" id="dlBackup">Download backup</button><label class="btn btn-ghost btn-sm" for="importFile" style="cursor:pointer">Restore backup</label><input type="file" id="importFile" accept=".json,application/json" hidden></div></div>
+        </div>
+        <div class="import-panel" id="importPanel" hidden style="margin-top:16px">
+          <div id="importText"></div>
+          <div class="row">
+            <button class="btn btn-primary btn-sm" id="importMerge">Add to my data</button>
+            <button class="btn btn-danger btn-sm" id="importReplace">Replace my data</button>
+            <button class="btn btn-ghost btn-sm" id="importCancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-setup" hidden>
+      <div class="settings">
+        <div class="card glass stack">
+          <div><h2 class="card-title">Monthly spending limit</h2><p class="small">You'll see a warning at 80% and a red alert when you go over. The daily limit is this amount divided by the days in the month.</p></div>
+          <div class="field">
+            <label for="sBudget">Spending limit per month</label>
+            <div class="money"><span class="cur" data-cur>Rp</span><input class="input" id="sBudget" type="text" inputmode="decimal" placeholder="e.g. 5.000.000"></div>
+            <div class="chips" id="budgetChips"></div>
+          </div>
+          <div class="row"><button class="btn btn-primary" id="saveBudget">Save limit</button><button class="btn btn-ghost" id="clearBudget">Remove limit</button></div>
+          <p class="small" id="budgetNow"></p>
+        </div>
+        <div class="card glass stack">
+          <div><h2 class="card-title">Savings target</h2><p class="small">How much of your monthly income you want to set aside. 10–20% is a common starting point.</p></div>
+          <div class="field"><label for="sTarget">Target share of income</label>
+            <div class="chips" id="targetChips"></div>
+          </div>
+          <div class="field"><label for="sCurrency">Display currency</label>
+            <select class="select" id="sCurrency">
+              <option value="IDR">Indonesian Rupiah (Rp)</option>
+              <option value="USD">US Dollar ($)</option>
+              <option value="SGD">Singapore Dollar (S$)</option>
+              <option value="MYR">Malaysian Ringgit (RM)</option>
+              <option value="EUR">Euro (€)</option>
+            </select>
+            <span class="small">Changes how amounts are shown. It doesn't convert them. Savings estimates assume rupiah.</span>
+          </div>
+        </div>
+        <div class="card glass stack">
+          <div><h2 class="card-title">Where you buy things</h2><p class="small">These appear in the "Bought from" list.</p></div>
+          <div class="src-chips" id="srcChips"></div>
+          <form class="row" id="addSourceForm"><input class="input" id="newSource" maxlength="40" placeholder="Add a source, e.g. Social commerce"><button class="btn btn-ghost" type="submit">Add source</button></form>
+        </div>
+        <div class="card glass stack">
+          <div><h2 class="card-title">Your data</h2><p class="small">Stored only in this browser. Clearing browser data removes it, so keep a backup.</p></div>
+          <p class="small num" id="dataStats"></p>
+          <div class="row"><button class="btn btn-danger" id="wipeBtn">Delete everything</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog class="modal" id="modal" aria-labelledby="modalTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div><h2 id="modalTitle">Details</h2><p id="modalSub"></p></div>
+      <button class="icon-btn" id="modalClose" aria-label="Close"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
