@@ -20,6 +20,26 @@
 <body>
 <div class="backdrop" aria-hidden="true"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
 
+<div class="login" id="login" hidden>
+  <div class="login-card" id="loginCard">
+    <div class="brand login-brand">
+      <div class="brand-mark"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></div>
+      <div><div class="brand-name">Pocket Ledger</div><div class="brand-sub">Family money plan</div></div>
+    </div>
+    <h1 class="login-title">Who's signing in?</h1>
+    <div class="accounts" id="accountList" role="radiogroup" aria-label="Choose an account"></div>
+    <form class="login-form" id="loginForm" novalidate>
+      <div class="field" id="pwField">
+        <label for="loginPw">Password</label>
+        <div class="pw-wrap"><input class="input" id="loginPw" type="password" autocomplete="current-password" placeholder="Enter your password"><button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">Show</button></div>
+      </div>
+      <div class="err" id="loginErr" role="alert"></div>
+      <button class="btn btn-primary" id="loginBtn" type="submit">Sign in</button>
+    </form>
+    <p class="login-note" id="loginNote"></p>
+  </div>
+</div>
+
 <div class="shell">
   <aside class="side glass">
     <div class="brand">
@@ -28,6 +48,7 @@
     </div>
     <nav class="nav" aria-label="Sections">
       <span class="nav-pill" aria-hidden="true"></span>
+      <a href="#family" data-view="family" title="Family" hidden><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.6c3 .1 5.5 2 5.5 5"/></svg><span class="short">Family</span><span class="lbl">Family</span></a>
       <a href="#dashboard" data-view="dashboard" title="Dashboard"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg><span class="short">Home</span><span class="lbl">Dashboard</span></a>
       <a href="#expenses" data-view="expenses" title="Expenses"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span class="short">Spend</span><span class="lbl">Expenses</span></a>
       <a href="#daily" data-view="daily" title="Daily breakdown"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h2M14 14h2M8 17h2"/></svg><span class="short">Daily</span><span class="lbl">Daily breakdown</span></a>
@@ -36,7 +57,7 @@
       <a href="#reports" data-view="reports" title="Reports"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9.5 15.5L12 18l2.5-2.5"/></svg><span class="short">Reports</span><span class="lbl">Reports</span></a>
       <a href="#setup" data-view="setup" title="Budget & settings"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="short">Setup</span><span class="lbl">Budget &amp; settings</span></a>
     </nav>
-    <div class="side-note"><b>No account, no database</b>Your data is saved in this browser only. Download a backup from Reports to move it to another device.</div>
+    <div class="side-note" id="syncNote"><b>Saved</b>Your entries are saved.</div>
   </aside>
 
   <main class="main">
@@ -46,6 +67,7 @@
         <h1 id="viewTitle">Dashboard</h1>
       </div>
       <div class="top-actions">
+        <button class="me-btn" id="meBtn" type="button" aria-label="Your account"><span class="avatar" id="meAvatar">W</span><span class="me-name" id="meName">Wife</span><span class="sync-dot" id="syncDot" aria-hidden="true"></span></button>
         <div class="month glass" role="group" aria-label="Choose month">
           <button class="icon-btn" id="prevMonth" aria-label="Previous month"><svg class="ico" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
           <div class="month-label num" id="monthLabel" aria-live="polite">October 2026</div>
@@ -54,12 +76,22 @@
         <button class="btn btn-primary" id="addBtn"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add expense</button>
       </div>
     </header>
+    <div class="alert info viewing" id="viewingBanner" hidden>
+      <svg class="ico" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      <div><p class="alert-title" id="viewingTitle">Viewing</p><p>Read only. Changes can only be made from that account.</p></div>
+      <button class="btn btn-ghost btn-sm alert-act" id="exitViewing">Back to family</button>
+    </div>
 
     <!-- DASHBOARD -->
     <section class="view" id="view-dashboard">
+      <div class="alert info" id="legacyBanner" hidden>
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M17 14l3 3-3 3"/></svg>
+        <div><p class="alert-title">Entries saved before accounts were added</p><p id="legacyText"></p></div>
+        <div class="row alert-act"><button class="btn btn-primary btn-sm" id="legacyMove">Move them here</button><button class="btn btn-ghost btn-sm" id="legacyDismiss">Not now</button></div>
+      </div>
       <div class="card glass" id="onboard" hidden>
         <div class="card-head"><h2 class="card-title">Start your month</h2><button class="btn btn-ghost btn-sm" id="hideOnboard">Hide</button></div>
-        <p class="small" style="margin:-8px 0 16px">Four quick steps to get your first calculation. Your data stays in this browser.</p>
+        <p class="small" id="onboardIntro" style="margin:-8px 0 16px"></p>
         <div class="steps" id="steps"></div>
       </div>
       <div class="alert" id="budgetAlert" hidden role="alert">
@@ -107,6 +139,11 @@
             <div class="message" id="flowMessage"></div>
           </div>
         </div>
+      </div>
+
+      <div class="card glass child-only">
+        <div class="card-head"><h2 class="card-title">Your savings</h2><a class="card-sub" href="#savings">Open savings</a></div>
+        <div class="src" id="childSavings"></div>
       </div>
 
       <div class="stats">
@@ -252,7 +289,7 @@
     <section class="view" id="view-income" hidden>
       <div class="kpis">
         <div class="kpi glass"><div class="stat-label">Income this month</div><div class="stat-value num" id="iTotal">0</div><div class="stat-note" id="iTotalNote"></div></div>
-        <div class="kpi glass"><div class="stat-label">Spent</div><div class="stat-value num" id="iSpent">0</div><div class="stat-note" id="iSpentNote"></div></div>
+        <div class="kpi glass exp-only"><div class="stat-label">Spent</div><div class="stat-value num" id="iSpent">0</div><div class="stat-note" id="iSpentNote"></div></div>
         <div class="kpi glass"><div class="stat-label">Left after spending &amp; savings</div><div class="stat-value num" id="iLeft">0</div><div class="stat-note" id="iLeftNote"></div></div>
       </div>
       <div class="card glass" id="incomeCard">
@@ -262,7 +299,7 @@
             <div class="field">
               <label for="iSource">Type of income</label>
               <select class="select" id="iSource">
-                <option>Salary</option><option>Freelance / side job</option><option>Business</option><option>Bonus / THR</option><option>Investment returns</option><option>Gift / transfer</option><option>Other</option>
+                <option>Salary</option><option>Allowance</option><option>Freelance / side job</option><option>Business</option><option>Bonus / THR</option><option>Investment returns</option><option>Gift / transfer</option><option>Other</option>
               </select>
             </div>
             <div class="field">
@@ -288,7 +325,7 @@
             <div class="receipt">
               <div class="receipt-head"><strong>Can income cover it?</strong><span id="incMonth">October 2026</span></div>
               <div class="r-line"><span>Total income</span><span id="ciIncome">0</span></div>
-              <div class="r-line"><span>Spending</span><span id="ciSpend">0</span></div>
+              <div class="r-line exp-only"><span>Spending</span><span id="ciSpend">0</span></div>
               <div class="r-line"><span>Savings set aside</span><span id="ciSave">0</span></div>
               <div class="r-line total"><span id="ciLeftLbl">Left over</span><span id="ciLeft">0</span></div>
             </div>
@@ -383,6 +420,28 @@
           <div class="card-head"><h2 class="card-title">All savings by type</h2><span class="card-sub">Every month combined</span></div>
           <div class="src" id="svByType"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- FAMILY (Super Admin) -->
+    <section class="view" id="view-family" hidden>
+      <div class="kpis">
+        <div class="kpi glass"><div class="stat-label">Family income</div><div class="stat-value num" id="fIncome">0</div><div class="stat-note" id="fIncomeNote"></div></div>
+        <div class="kpi glass"><div class="stat-label">Family spending</div><div class="stat-value num" id="fSpent">0</div><div class="stat-note" id="fSpentNote"></div></div>
+        <div class="kpi glass"><div class="stat-label">Family savings</div><div class="stat-value num" id="fSaved">0</div><div class="stat-note" id="fSavedNote"></div></div>
+      </div>
+      <div class="card glass">
+        <div class="card-head"><h2 class="card-title" id="familyTitle">Accounts</h2><button class="btn btn-ghost btn-sm" id="familyRefresh">Refresh</button></div>
+        <div class="members" id="members"></div>
+      </div>
+      <div class="card glass" id="pwAdmin">
+        <div class="card-head"><h2 class="card-title">Passwords</h2><span class="card-sub">A new password signs that account out on every device</span></div>
+        <form class="row" id="pwAdminForm" novalidate>
+          <select class="select" id="pwUser" aria-label="Account"></select>
+          <input class="input" id="pwNew" type="password" placeholder="New password (8+ characters)" autocomplete="new-password" aria-label="New password">
+          <button class="btn btn-primary" type="submit">Set password</button>
+        </form>
+        <p class="small" id="pwAdminNote" style="margin-top:10px"></p>
       </div>
     </section>
 

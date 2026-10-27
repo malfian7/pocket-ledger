@@ -1,6 +1,13 @@
 # Pocket Ledger
 
-A monthly money tracker that runs entirely in the browser. It has no database, no account and no build step.
+A family money tracker with four accounts: **Wife**, **Husband**, **Child** and **Super Admin**. Each account has its own password and its own entries, saved to a small database so they show up on any device.
+
+| Account | Can use |
+|---|---|
+| Wife | Everything, with her own budget and entries |
+| Husband | Everything, with his own budget and entries |
+| Child | Dashboard, Income and Savings |
+| Super Admin | Family overview of all three accounts (read only) and password resets |
 
 - **Expenses**: item, where it was bought, the starting price and the final price after discount.
 - **Daily breakdown**: totals for each day that add up to the monthly total, with a details view for every day.
@@ -9,11 +16,12 @@ A monthly money tracker that runs entirely in the browser. It has no database, n
 - **Monthly spending limit**: a warning at 80% and an alert when you go over it.
 - **Export**: an Excel workbook, a printable report (save it as PDF), CSV, and a JSON backup and restore.
 
-Your data is stored in the browser's `localStorage`. It never leaves your device. Use **Reports → Download backup** to move your data to another browser or device.
+On Vercel, entries are saved per account in Upstash Redis. If there's no connection, they're kept on the device and saved automatically once you're back online. When the app runs without the server (opening `index.html` directly), it switches to **demo mode**: no passwords, and entries stay in that browser.
 
 ## Project structure
 
 ```
+api/                  Server functions (login, data, family overview, passwords)
 index.html            Page markup
 css/style.css         Styles
 js/app.js             All app logic
@@ -23,17 +31,22 @@ manifest.webmanifest  Lets the app be installed on a phone
 vercel.json           Vercel settings (clean URLs, security headers)
 ```
 
+## Environment variables
+
+| Name | What to put |
+|---|---|
+| `SESSION_SECRET` | A long random string (32+ characters). It signs sign-in cookies. |
+| `SUPERADMIN_PASSWORD` | Starting password for Super Admin |
+| `WIFE_PASSWORD` | Starting password for Wife |
+| `HUSBAND_PASSWORD` | Starting password for Husband |
+| `CHILD_PASSWORD` | Starting password for Child |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) | Added for you when you connect Upstash Redis in Vercel |
+
+Passwords are only read from these variables until someone changes them in the app. After that, a hashed copy in the database is used.
+
 ## Run locally
 
-Opening `index.html` directly works, but the icon paths assume a web server. For the closest match to the live site, run:
-
-```bash
-npx serve .
-# or
-python3 -m http.server 8000
-```
-
-Then open http://localhost:3000 (serve) or http://localhost:8000 (Python).
+`vercel dev` runs both the page and the API. Opening `index.html` on its own starts demo mode.
 
 ## Updating market prices
 
@@ -48,12 +61,12 @@ The gold price, BI Rate, LPS rate, SBN coupons, exchange rates and IHSG are a sn
 **Cara A: lewat website GitHub (tanpa install apa pun)**
 
 1. Masuk ke https://github.com, klik **New repository**.
-2. Isi nama repo, misalnya `pocket-ledger`, pilih **Public** atau **Private**, lalu klik **Create repository**.
+2. Isi nama repo, misalnya `pocket-ledger`. **Pilih Private** (disarankan untuk aplikasi keuangan keluarga), lalu klik **Create repository**.
 3. Di halaman repo yang masih kosong, klik **uploading an existing file**.
-4. Seret **semua isi** folder `pocket-ledger` ke halaman itu. Yang diseret adalah isinya (`index.html`, folder `css`, `js`, `icons`, dll.), bukan foldernya.
+4. Seret **semua isi** folder `pocket-ledger` ke halaman itu, termasuk folder `api`. Yang diseret adalah isinya, bukan foldernya.
 5. Klik **Commit changes**.
 
-> Catatan: file `.gitignore` diawali titik, jadi kadang tersembunyi di Windows atau Mac. File ini opsional, tidak masalah kalau tidak ikut ter-upload.
+> Catatan: file `.gitignore` diawali titik, jadi kadang tersembunyi di Windows atau Mac. File ini opsional.
 
 **Cara B: lewat Git di terminal**
 
@@ -67,28 +80,50 @@ git remote add origin https://github.com/USERNAME/pocket-ledger.git
 git push -u origin main
 ```
 
-### 2. Deploy ke Vercel
+### 2. Buat project di Vercel
 
 1. Masuk ke https://vercel.com dengan akun GitHub Anda.
-2. Klik **Add New… → Project**, lalu pilih repo `pocket-ledger` dan klik **Import**.
-3. Isi pengaturannya seperti ini:
+2. Klik **Add New… → Project**, pilih repo `pocket-ledger`, lalu klik **Import**.
+3. Isi pengaturannya:
    - **Framework Preset**: `Other`
-   - **Root Directory**: `./`
-   - **Build Command**: kosongkan
-   - **Output Directory**: kosongkan (atau `.`)
-4. Klik **Deploy**. Dalam kurang dari satu menit, situs Anda online di alamat seperti `pocket-ledger.vercel.app`.
+   - **Build Command** dan **Output Directory**: kosongkan
+4. Buka bagian **Environment Variables** dan tambahkan 5 variabel ini:
 
-Setiap kali Anda push perubahan ke GitHub, Vercel otomatis memperbarui situsnya.
+   | Name | Value |
+   |---|---|
+   | `SESSION_SECRET` | Teks acak panjang, minimal 32 karakter (campuran huruf dan angka) |
+   | `SUPERADMIN_PASSWORD` | Password untuk Super Admin |
+   | `WIFE_PASSWORD` | Password untuk Wife |
+   | `HUSBAND_PASSWORD` | Password untuk Husband |
+   | `CHILD_PASSWORD` | Password untuk Child |
 
-### 3. Pasang di HP (opsional)
+   Pakai password minimal 8 karakter, dan jangan sama dengan password email atau bank.
+5. Klik **Deploy**.
 
-Buka alamat Vercel di HP, lalu:
+### 3. Sambungkan database (Upstash Redis)
+
+Database ini yang membuat data bisa dibuka dari device mana pun.
+
+1. Di Vercel, buka project `pocket-ledger`, lalu tab **Storage**.
+2. Pilih **Create Database** (atau **Browse Marketplace**), lalu pilih **Upstash → Redis**. Paket gratisnya sudah cukup untuk keluarga.
+3. Ikuti langkahnya sampai database **terhubung (Connect) ke project `pocket-ledger`**. Vercel otomatis menambahkan variabel `KV_REST_API_URL` dan `KV_REST_API_TOKEN`.
+4. Buka tab **Deployments**, klik **⋯** pada deployment teratas, lalu pilih **Redeploy** supaya variabel barunya terbaca.
+
+### 4. Coba masuk
+
+Buka alamat Vercel Anda (misalnya `pocket-ledger.vercel.app`), pilih akun, lalu masukkan password yang tadi Anda isi.
+
+- Kalau muncul pesan bahwa database belum tersambung atau `SESSION_SECRET` belum ada, cek lagi langkah 2 dan 3, lalu Redeploy.
+- Setelah login, password bisa diganti lewat avatar di kanan atas. Super Admin bisa mengganti password akun lain di halaman **Family**. Setelah diganti, password di Environment Variables tidak dipakai lagi untuk akun itu.
+
+### 5. Pasang di HP (opsional)
 
 - **iPhone (Safari)**: tombol Share → **Add to Home Screen**.
 - **Android (Chrome)**: menu ⋮ → **Install app** atau **Add to Home screen**.
 
-### Penting soal data
+### Catatan data
 
-- Data tersimpan di browser per perangkat. Data di laptop dan di HP **tidak otomatis sinkron**.
-- Untuk memindahkan data: **Reports → Download backup** di perangkat lama, lalu **Restore backup** di perangkat baru.
-- Data yang Anda isi di versi preview Claude tidak ikut pindah ke situs Vercel. Pakai backup kalau ingin memindahkannya.
+- Setiap akun punya data sendiri. Wife dan Husband masing-masing punya budget sendiri.
+- Super Admin hanya **melihat** data Wife, Husband dan Child, tidak bisa mengubahnya.
+- Kalau sebelumnya sudah ada entri di browser yang sama (dari versi tanpa akun), setelah login akan muncul tombol **Move them here** untuk memindahkannya ke akun Anda.
+- Backup tetap tersedia di **Reports → Download backup**.

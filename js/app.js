@@ -3,7 +3,21 @@
 "use strict";
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
-const STORE_KEY = "pocket-ledger-v1";
+const LEGACY_KEY = "pocket-ledger-v1";
+const LOCAL_SESSION_KEY = "pocket-ledger-session";
+const LAST_USER_KEY = "pocket-ledger-last-user";
+const ACCOUNTS = {
+  wife:       { name:"Wife",        role:"adult",      desc:"Everything, with her own budget" },
+  husband:    { name:"Husband",     role:"adult",      desc:"Everything, with his own budget" },
+  child:      { name:"Child",       role:"child",      desc:"Dashboard, income & savings" },
+  superadmin: { name:"Super Admin", role:"superadmin", desc:"Sees every account" }
+};
+const INITIALS = { wife:"W", husband:"H", child:"C", superadmin:"SA" };
+const ROLE_VIEWS = { adult:["dashboard","expenses","daily","income","savings","reports","setup"], child:["dashboard","income","savings"] };
+let MODE = "local";   // "cloud" when served with the Vercel API
+let session = null;   // { id, name, role }
+const storeKeyFor = id => "pocket-ledger-v2:" + id;
+const storeKey = () => storeKeyFor(session ? session.id : "guest");
 const DEFAULT_SOURCES = ["Online Shop","Supermarket","Minimarket","Traditional Market","Restaurant / Café","Food Delivery","Transport","Bills & Utilities","Health & Pharmacy","Other"];
 const STORES = ["Tokopedia","Shopee","Lazada","TikTok Shop","Blibli","Zalora","Indomaret","Alfamart","Superindo","Hypermart","Lotte Mart","GoFood","GrabFood","ShopeeFood","Gojek","Grab","PLN Mobile","Telkomsel","Guardian","Kimia Farma"];
 const CURRENCIES = {
@@ -90,38 +104,43 @@ function mkSaving(date, type, amount, note, fx){
   return s;
 }
 function freshState(){ return { expenses:[], incomes:[], savings:[], budget:0, target:20, currency:"IDR", sources: DEFAULT_SOURCES.slice(), onboardHidden:false }; }
-function load(){
-  let raw = null;
-  try { raw = localStorage.getItem(STORE_KEY); } catch(e){}
-  if (raw){
-    try {
-      const s = JSON.parse(raw);
-      const st = {
-        expenses: Array.isArray(s.expenses) ? s.expenses : [],
-        incomes: Array.isArray(s.incomes) ? s.incomes : [],
-        savings: Array.isArray(s.savings) ? s.savings : [],
-        budget: Number(s.budget)||0,
-        target: isFinite(+s.target) && s.target!==undefined ? +s.target : 20,
-        currency: CURRENCIES[s.currency] ? s.currency : "IDR",
-        sources: Array.isArray(s.sources) && s.sources.length ? s.sources : DEFAULT_SOURCES.slice(),
-        onboardHidden: !!s.onboardHidden
-      };
-      // Remove the example entries shipped with earlier versions.
-      const hadSample = [...st.expenses, ...st.incomes, ...st.savings].some(e=>e && e.sample);
-      if (hadSample){
-        st.expenses = st.expenses.filter(e=>!e.sample); st.incomes = st.incomes.filter(e=>!e.sample); st.savings = st.savings.filter(e=>!e.sample);
-        if (!st.expenses.length && !st.incomes.length && !st.savings.length) return freshState();
-      }
-      return st;
-    } catch(e){}
-  }
-  return freshState();
+function normalizeState(s){
+  s = s || {};
+  const st = {
+    expenses: Array.isArray(s.expenses) ? s.expenses.filter(e=>e && !e.sample) : [],
+    incomes: Array.isArray(s.incomes) ? s.incomes.filter(e=>e && !e.sample) : [],
+    savings: Array.isArray(s.savings) ? s.savings.filter(e=>e && !e.sample) : [],
+    budget: Number(s.budget)||0,
+    target: isFinite(+s.target) && s.target!==undefined && s.target!==null ? +s.target : 20,
+    currency: CURRENCIES[s.currency] ? s.currency : "IDR",
+    sources: Array.isArray(s.sources) && s.sources.length ? s.sources : DEFAULT_SOURCES.slice(),
+    onboardHidden: !!s.onboardHidden,
+    deleted: Array.isArray(s.deleted) ? s.deleted.slice(-1000) : []
+  };
+  if (s._dirty) st._dirty = true;
+  if (s._rev) st._rev = s._rev;
+  return st;
 }
-function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e){} }
+function readJSON(key){ try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch(e){ return null; } }
+function load(){ return normalizeState(readJSON(storeKey())); }
+const hasEntries = st => !!(st && (st.expenses.length || st.incomes.length || st.savings.length));
+function payload(st){ const { _dirty, _rev, ...rest } = st; return rest; }
+function mergeStates(server, local){
+  const out = Object.assign({}, server, { budget: local.budget, target: local.target, currency: local.currency, sources: local.sources, onboardHidden: local.onboardHidden });
+  const del = new Set([...(server.deleted||[]), ...(local.deleted||[])]);
+  ["expenses","incomes","savings"].forEach(k=>{
+    const map = new Map();
+    (server[k]||[]).forEach(r=>map.set(r.id, r));
+    (local[k]||[]).forEach(r=>map.set(r.id, r));
+    out[k] = [...map.values()].filter(r=>!del.has(r.id));
+  });
+  out.deleted = [...del].slice(-1000);
+  return out;
+}
+function withState(tmp, fn){ const prev = state; state = tmp; try { return fn(); } finally { state = prev; } }
 
-let state = load();
-save();
-const ui = { month: currentYM(), view:"", editing:null, editingIncome:null, search:"", filter:"all", sort:"date-desc", scope:"month", pendingImport:null, lastAdded:null, pendingDelete:null, hideEmpty: !!(window.matchMedia && matchMedia("(max-width: 640px)").matches) };
+let state = freshState();
+const ui = { viewing:null, readOnly:false, family:null, legacyDismissed:false, month: currentYM(), view:"", editing:null, editingIncome:null, search:"", filter:"all", sort:"date-desc", scope:"month", pendingImport:null, lastAdded:null, pendingDelete:null, hideEmpty: !!(window.matchMedia && matchMedia("(max-width: 640px)").matches) };
 
 /* ---------- money ---------- */
 function cfg(){ return CURRENCIES[state.currency]; }
@@ -209,21 +228,25 @@ function countTo(el, value, fmt){
 }
 
 /* ---------- views ---------- */
-const VIEWS = { dashboard:["Overview","Dashboard"], expenses:["Add & review","Expenses"], daily:["Day by day","Daily breakdown"], income:["Money in","Income"], savings:["Set aside","Savings"], reports:["Export","Reports"], setup:["Preferences","Budget & settings"] };
+const VIEWS = { dashboard:["Overview","Dashboard"], expenses:["Add & review","Expenses"], daily:["Day by day","Daily breakdown"], income:["Money in","Income"], savings:["Set aside","Savings"], reports:["Export","Reports"], setup:["Preferences","Budget & settings"], family:["Super Admin","Family"] };
 const ADD_LABEL = { income:"Add income", savings:"Set money aside" };
 function showView(name, animate){
-  if (!VIEWS[name]) name = "dashboard";
+  if (!session) return;
+  const allowed = allowedViews();
+  if (!VIEWS[name] || !allowed.includes(name)){ name = allowed[0] || "dashboard"; try { history.replaceState(null, "", "#"+name); } catch(e){} }
   const changed = ui.view !== name;
   ui.view = name;
   Object.keys(VIEWS).forEach(v=>{ $("#view-"+v).hidden = v!==name; });
   $$(".nav a").forEach(a=>{ if (a.dataset.view===name) a.setAttribute("aria-current","page"); else a.removeAttribute("aria-current"); });
   $("#eyebrow").textContent = VIEWS[name][0];
   $("#viewTitle").textContent = VIEWS[name][1];
-  $("#addBtn").lastChild.textContent = ADD_LABEL[name] || "Add expense";
+  $("#addBtn").lastChild.textContent = ADD_LABEL[name] || (effectiveRole()==="child" ? "Add income" : "Add expense");
+  $("#addBtn").hidden = ui.readOnly || session.role==="superadmin";
   const el = $("#view-"+name);
   if (animate !== false && changed && !reduceMotion){ el.classList.remove("entering"); void el.offsetWidth; el.classList.add("entering"); setTimeout(()=>el.classList.remove("entering"), 700); }
   positionPill();
   if (name==="dashboard") renderDaily(true);
+  if (name==="family") renderFamily();
 }
 const pill = $(".nav-pill");
 function positionPill(){
@@ -240,6 +263,8 @@ function renderAll(){
   $$("[data-cur]").forEach(el=>el.textContent = cfg().sym);
   renderDashboard(); renderSourcesSelects(); renderSlip(); renderTable(); renderDailyView();
   renderIncome(); renderSavings(); renderReports(); renderSettings();
+  if (session && session.role==="superadmin") renderFamily();
+  renderLegacy();
 }
 
 /* ---------- messages ---------- */
@@ -260,6 +285,14 @@ function statusMessage(sum, st, ym){
     : `You stayed within your limit in ${monthName(ym)}, with <b>${money(st.left)}</b> to spare.${savedTxt}`;
 }
 function flowMessage(cf, ym){
+  if (effectiveRole()==="child"){
+    if (!cf.income) return { tone:"", text:`No income recorded for ${monthName(ym)}. Add pocket money or any other income to see how much you can save.` };
+    const goal = cf.income*state.target/100;
+    const tgt = state.target ? (cf.saved >= goal ? ` That's above your ${state.target}% target.` : ` Save <b>${money(goal-cf.saved)}</b> more to reach your ${state.target}% target.`) : "";
+    return { tone: cf.left<0 ? "care" : "ok", text: cf.left<0
+      ? `You've set aside <b>${money(-cf.left)}</b> more than you received. Check your savings entries.`
+      : `You received <b>${money(cf.income)}</b> and saved <b>${money(cf.saved)}</b> (${fmtPct(cf.rate)}). <b>${money(cf.left)}</b> is left to use.${tgt}` };
+  }
   if (!cf.income) return { tone:"", text:`No income recorded for ${monthName(ym)}. Add your salary and other income to see whether it covers your spending and savings.` };
   const t = state.target/100, goal = cf.income*t;
   const targetTxt = state.target ? (cf.saved >= goal
@@ -317,15 +350,16 @@ function renderDashboard(){
   $("#rcFoot").textContent = `${plural(sum.count,"purchase")} · ${sum.discounted} with discount`;
 
   // money in & out
+  const isChild = effectiveRole()==="child";
   $("#equation").innerHTML = `
     <div class="eq-row"><span class="lbl"><span class="op">+</span>Income</span><b>${money(cf.income)}</b></div>
-    <div class="eq-row"><span class="lbl"><span class="op">−</span>Spending</span><b>${money(cf.spent)}</b></div>
+    ${isChild ? "" : `<div class="eq-row"><span class="lbl"><span class="op">−</span>Spending</span><b>${money(cf.spent)}</b></div>`}
     <div class="eq-row"><span class="lbl"><span class="op">−</span>Savings</span><b>${money(cf.saved)}</b></div>
     <div class="eq-row result ${cf.left>=0?"pos":"neg"}"><span class="lbl"><span class="op">=</span>${cf.left>=0?"Left over":"Short by"}</span><b>${money(Math.abs(cf.left))}</b></div>`;
   const base = Math.max(cf.income, cf.spent+cf.saved) || 1;
   const seg = (cls, v, i) => v>0 ? `<div class="${cls}" style="width:${v/base*100}%;animation-delay:${i*80}ms"></div>` : "";
   $("#flowbar").innerHTML = seg("fb-spend",cf.spent,0) + seg("fb-save",cf.saved,1) + seg("fb-left",Math.max(0,cf.left),2);
-  $("#flowLegend").innerHTML = `<span><i style="background:var(--spend)"></i>Spending ${fmtPct(pct(cf.spent,cf.income))}</span><span><i style="background:var(--teal-bar)"></i>Savings ${fmtPct(cf.rate)}</span><span><i style="background:var(--left)"></i>Left over ${fmtPct(Math.max(0,pct(cf.left,cf.income)))}</span>` + (cf.income ? "" : `<span>of income</span>`);
+  $("#flowLegend").innerHTML = (isChild ? "" : `<span><i style="background:var(--spend)"></i>Spending ${fmtPct(pct(cf.spent,cf.income))}</span>`) + `<span><i style="background:var(--teal-bar)"></i>Savings ${fmtPct(cf.rate)}</span><span><i style="background:var(--left)"></i>Left over ${fmtPct(Math.max(0,pct(cf.left,cf.income)))}</span>` + (cf.income ? "" : `<span>of income</span>`);
   const fm = flowMessage(cf, ui.month);
   const fmEl = $("#flowMessage"); fmEl.innerHTML = fm.text;
   fmEl.style.background = fm.tone==="over" ? "var(--over-soft)" : fm.tone==="care" ? "var(--care-soft)" : "";
@@ -360,6 +394,10 @@ function renderDashboard(){
     <div class="li"><div style="min-width:0"><div class="li-title">${esc(r.item)}</div><div class="li-meta">${esc(r.store||r.source)} · paid ${money(r.final)}</div></div>
     <div class="li-amt num"><span class="save">− ${money(r.original-r.final)}</span><span class="li-meta">${fmtPct(pct(r.original-r.final,r.original))} off</span></div></div>`).join("")
     : `<div class="empty">No discounted purchases this month.</div>`;
+  if (isChild){
+    const byT = {}; state.savings.forEach(x=>{ const k = INST[x.type]?INST[x.type].name:x.type; (byT[k]=byT[k]||{v:0,n:0}); byT[k].v+=+x.amount; byT[k].n++; });
+    $("#childSavings").innerHTML = barRows(Object.entries(byT).map(([k,v])=>({label:k, sub:plural(v.n,"entry").replace("entrys","entries"), value:v.v})), sumBy(state.savings,x=>x.amount), "Nothing saved yet. Open Savings to set some money aside.");
+  }
   if (ui.view==="dashboard") renderDaily(true);
 }
 function barRows(items, total, empty){
@@ -376,13 +414,19 @@ function barRows(items, total, empty){
 /* ---------- getting started ---------- */
 function renderOnboard(){
   const ym = ui.month, cf = cashflow(ym);
-  const steps = [
+  const child = effectiveRole()==="child";
+  let steps = [
     { done: cf.income>0, title:"Add your income", text:"Record the salary you just received, plus any other income this month.", btn:"Add income", go:"income" },
     { done: state.budget>0, title:"Set a spending limit", text:"Choose how much you'll allow yourself to spend this month. You'll be warned at 80%.", btn:"Set limit", go:"setup" },
     { done: cf.saved>0, title:"Set money aside", text:"Move part of your income into savings first, so it doesn't get spent.", btn:"Save money", go:"savings" },
     { done: rowsFor(ym).length>0, title:"Add your first expense", text:"Type what you bought, where, and the price before and after discount.", btn:"Add expense", go:"expenses" }
   ];
+  if (child) steps = [
+    { done: cf.income>0, title:"Add your income", text:"Record pocket money, allowance or any other money you received.", btn:"Add income", go:"income" },
+    { done: cf.saved>0, title:"Set money aside", text:"Put part of it into savings so it keeps growing.", btn:"Save money", go:"savings" }
+  ];
   const all = steps.every(s=>s.done);
+  $("#onboardIntro").textContent = `${steps.length===2?"Two":"Four"} quick steps to get your first calculation.`;
   const prevDone = ui._doneSteps || null; ui._doneSteps = steps.map(s=>s.done);
   $("#onboard").hidden = state.onboardHidden || all;
   $("#steps").innerHTML = steps.map((s,i)=>`<div class="step ${s.done?"done":""} ${s.done && prevDone && !prevDone[i] ? "just-done":""}">
@@ -704,6 +748,7 @@ function finishDelete(kind, id){
     const coll = {exp:"expenses", inc:"incomes", sav:"savings"}[kind];
     const r = state[coll].find(x=>x.id===id);
     state[coll] = state[coll].filter(x=>x.id!==id);
+    state.deleted = (state.deleted||[]).concat(id).slice(-1000);
     ui.pendingDelete = null;
     if (kind==="exp" && ui.editing===id) resetForm(true);
     if (kind==="inc" && ui.editingIncome===id) resetIncome();
@@ -1019,7 +1064,7 @@ function downloadXlsx(){
   };
   const wb = X.utils.book_new();
   // Summary
-  const sum = [["Pocket Ledger — "+scopeLabel()], ["Currency", state.currency, "", "Monthly spending limit", state.budget||"Not set", "", "Savings target", state.target/100], [],
+  const sum = [["Pocket Ledger — "+ownerName()+" — "+scopeLabel()], ["Currency", state.currency, "", "Monthly spending limit", state.budget||"Not set", "", "Savings target", state.target/100], [],
     ["Month","Income","Spending","Savings","Left over","Purchases","Discounts","Spending limit","Limit left","Limit status","Savings rate","Result"]];
   months.forEach(m=>{ const cf = cashflow(m), s = summarize(rowsFor(m)), st = budgetStatus(s.paid);
     sum.push([monthName(m), cf.income, cf.spent, cf.saved, cf.left, s.count, s.saved, state.budget||"", state.budget? st.left : "", STATUS_TXT[st.key], cf.income? cf.rate : "", flowMessage(cf,m).text.replace(/<[^>]+>/g,"")]); });
@@ -1065,7 +1110,7 @@ function downloadXlsx(){
   const ws5 = X.utils.aoa_to_sheet(ab); ws5["!cols"] = [{wch:22},{wch:10},{wch:14},{wch:16},{wch:9}]; fmt(ws5,[2,3],[4]);
   X.utils.book_append_sheet(wb, ws5, "By source");
   const buf = X.write(wb, {bookType:"xlsx", type:"array"});
-  offerFile(`pocket-ledger_${scopeTag()}.xlsx`, new Blob([buf]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  offerFile(`pocket-ledger_${ownerTag()}_${scopeTag()}.xlsx`, new Blob([buf]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
 function downloadCsv(){
   const rows = scopeRows();
@@ -1073,11 +1118,11 @@ function downloadCsv(){
   const q = v => { const s = String(v==null?"":v); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
   const lines = [["Date","Item","Bought from","Store / app","Starting price","Discount","Discount %","Final price"].join(",")];
   rows.forEach(r=> lines.push([r.date, r.item, r.source, r.store||"", r.original, round(r.original-r.final), (pct(r.original-r.final,r.original)*100).toFixed(1), r.final].map(q).join(",")));
-  offerFile(`pocket-ledger_${scopeTag()}.csv`, "﻿"+lines.join("\r\n"), "text/csv");
+  offerFile(`pocket-ledger_${ownerTag()}_${scopeTag()}.csv`, "﻿"+lines.join("\r\n"), "text/csv");
 }
 function downloadBackup(){
   const data = { app:"Pocket Ledger", version:2, exportedAt: new Date().toISOString(), currency: state.currency, budget: state.budget, target: state.target, sources: state.sources, expenses: state.expenses, incomes: state.incomes, savings: state.savings };
-  offerFile(`pocket-ledger_backup_${todayISO()}.json`, JSON.stringify(data, null, 2), "application/json");
+  offerFile(`pocket-ledger_backup_${ownerTag()}_${todayISO()}.json`, JSON.stringify(data, null, 2), "application/json");
 }
 function reportHtml(){
   const months = scopeMonths(), rows = scopeRows(), s = summarize(rows);
@@ -1105,7 +1150,7 @@ tfoot td{font-weight:700;border:0}.bar{display:flex;justify-content:flex-end;mar
 @media (max-width:640px){.page{padding:20px;margin:0;border-radius:0}.calc{grid-template-columns:1fr 1fr}}
 </style></head><body><div class="page">
 <div class="bar"><button onclick="window.print()">Print or save as PDF</button></div>
-<h1>Monthly money report</h1><div class="meta">${esc(scopeLabel())} · ${plural(rows.length,"purchase")} · created ${longDate(todayISO())}</div>
+<h1>Monthly money report</h1><div class="meta">${esc(ownerName())} · ${esc(scopeLabel())} · ${plural(rows.length,"purchase")} · created ${longDate(todayISO())}</div>
 <div class="calc"><div><span>Income</span><b>${money(I)}</b></div><div><span>Spending</span><b>${money(s.paid)}</b></div><div><span>Savings</span><b>${money(V)}</b></div><div><span>${I-s.paid-V<0?"Short by":"Left over"}</span><b>${money(Math.abs(I-s.paid-V))}</b></div></div>
 <h2>Result</h2>${msgs}
 <h2>By month</h2><table><thead><tr><th>Month</th><th class="r">Income</th><th class="r">Spending</th><th class="r">Savings</th><th class="r">Left over</th><th class="r">Spending limit</th></tr></thead><tbody>${monthRows}</tbody></table>
@@ -1117,7 +1162,7 @@ tfoot td{font-weight:700;border:0}.bar{display:flex;justify-content:flex-end;mar
 <tfoot><tr><td colspan="3">Total</td><td class="r">${money(s.original)}</td><td class="r">− ${money(s.saved)}</td><td class="r">${money(s.paid)}</td></tr></tfoot></table>
 </div></body></html>`;
 }
-function downloadReport(){ if (!scopeMonths().length){ toast("Nothing to export for "+scopeLabel()); return; } offerFile(`pocket-ledger_report_${scopeTag()}.html`, reportHtml(), "text/html"); }
+function downloadReport(){ if (!scopeMonths().length){ toast("Nothing to export for "+scopeLabel()); return; } offerFile(`pocket-ledger_report_${ownerTag()}_${scopeTag()}.html`, reportHtml(), "text/html"); }
 
 /* ---------- import ---------- */
 const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -1196,7 +1241,7 @@ $("#addSourceForm").addEventListener("submit", e=>{ e.preventDefault(); const v=
 $("#wipeBtn").addEventListener("click", e=>{
   const b = e.currentTarget;
   if (!b.dataset.armed){ b.dataset.armed="1"; b.textContent="Tap again to delete everything"; setTimeout(()=>{ delete b.dataset.armed; b.textContent="Delete everything"; }, 4000); return; }
-  delete b.dataset.armed; state.expenses = []; state.incomes = []; state.savings = []; state.onboardHidden = false; save(); resetForm(); resetIncome(); renderAll(); toast("All entries deleted");
+  delete b.dataset.armed; state.deleted = (state.deleted||[]).concat([...state.expenses, ...state.incomes, ...state.savings].map(x=>x.id)).slice(-1000); state.expenses = []; state.incomes = []; state.savings = []; state.onboardHidden = false; save(); resetForm(); resetIncome(); renderAll(); toast("All entries deleted");
 });
 
 /* ---------- wiring ---------- */
@@ -1218,6 +1263,7 @@ $("#nextMonth").addEventListener("click", ()=>setMonth(shiftMonth(ui.month,1), 1
 $("#addBtn").addEventListener("click", ()=>{
   if (ui.view==="income"){ flashTo($("#incomeCard")); $("#iAmount").focus({preventScroll:true}); return; }
   if (ui.view==="savings"){ flashTo($("#saveCard")); $("#svAmount").focus({preventScroll:true}); return; }
+  if (effectiveRole()==="child"){ go("income"); setTimeout(()=>{ flashTo($("#incomeCard")); $("#iAmount").focus({preventScroll:true}); }, 80); return; }
   goAddExpense();
 });
 $("#expenseForm").addEventListener("submit", submitForm);
@@ -1242,7 +1288,7 @@ $("#dlBackup").addEventListener("click", downloadBackup);
 $("#dlReport").addEventListener("click", downloadReport);
 document.addEventListener("keydown", e=>{ if (e.key==="Escape" && !modal.open){ if (ui.editing) resetForm(true); if (ui.editingIncome) resetIncome(); } });
 window.addEventListener("hashchange", route);
-window.addEventListener("storage", e=>{ if (e.key===STORE_KEY){ state = load(); renderAll(); } });
+window.addEventListener("storage", e=>{ if (session && !ui.readOnly && MODE==="local" && e.key===storeKey()){ state = load(); renderAll(); } });
 
 /* ---------- responsive table labels ---------- */
 function labelTables(root){
@@ -1255,12 +1301,423 @@ let lblQueued = false;
 new MutationObserver(()=>{ if (lblQueued) return; lblQueued = true; requestAnimationFrame(()=>{ lblQueued = false; labelTables(); }); })
   .observe(document.body, {childList:true, subtree:true});
 
+/* ---------- accounts: roles ---------- */
+function effectiveRole(){ return ui.viewing ? ui.viewing.role : (session ? session.role : "adult"); }
+function ownerTag(){ return (ui.viewing || session || {id:"me"}).id; }
+function ownerName(){ return (ui.viewing || session || {name:""}).name; }
+function allowedViews(){
+  if (!session) return [];
+  if (session.role==="superadmin"){
+    if (!ui.viewing) return ["family"];
+    return ["family"].concat(ui.viewing.role==="child" ? ["dashboard","income","savings","reports"] : ["dashboard","expenses","daily","income","savings","reports"]);
+  }
+  return ROLE_VIEWS[session.role] || ROLE_VIEWS.adult;
+}
+function go(view){ if (location.hash === "#"+view) showView(view, true); else location.hash = view; }
+function applyRole(){
+  const b = document.body;
+  b.classList.toggle("role-child", effectiveRole()==="child");
+  b.classList.toggle("role-admin", !!session && session.role==="superadmin");
+  b.classList.toggle("readonly", ui.readOnly);
+  if (session){
+    const av = $("#meAvatar");
+    av.textContent = INITIALS[session.id] || session.name[0];
+    av.className = "avatar av-" + session.id;
+    $("#meName").textContent = session.name;
+  }
+  const vb = $("#viewingBanner");
+  vb.hidden = !ui.viewing;
+  if (ui.viewing) $("#viewingTitle").textContent = `Viewing ${ui.viewing.name}'s ledger`;
+}
+function updateNav(){
+  const allowed = allowedViews();
+  $$(".nav a").forEach(a=>{ a.hidden = !allowed.includes(a.dataset.view); });
+  requestAnimationFrame(positionPill);
+}
+
+/* ---------- accounts: server calls ---------- */
+function api(method, url, body, extra){
+  return fetch(url, Object.assign({ method, credentials:"same-origin", cache:"no-store",
+    headers: body ? {"Content-Type":"application/json"} : {}, body: body ? JSON.stringify(body) : undefined }, extra||{}));
+}
+async function detectMode(){
+  if (/^https?:$/.test(location.protocol)){
+    try {
+      const r = await fetch("/api/session", { credentials:"same-origin", cache:"no-store" });
+      if (r.ok && (r.headers.get("content-type")||"").includes("json")){
+        const j = await r.json();
+        if (j && j.app==="pocket-ledger"){ MODE = "cloud"; ui.setupError = j.setupError || null; session = j.user || null; return; }
+      }
+    } catch(e){}
+  }
+  MODE = "local";
+  let id = null; try { id = localStorage.getItem(LOCAL_SESSION_KEY); } catch(e){}
+  session = id && ACCOUNTS[id] ? { id, name:ACCOUNTS[id].name, role:ACCOUNTS[id].role } : null;
+}
+
+/* ---------- accounts: saving & syncing ---------- */
+const sync = { rev:0, timer:null, retry:null, busy:false, again:false, status:"saved", at:null };
+function persistLocal(){
+  if (!session || session.role==="superadmin" || ui.readOnly) return;
+  try { localStorage.setItem(storeKey(), JSON.stringify(Object.assign({}, state, { _rev: sync.rev }))); } catch(e){}
+}
+function save(){
+  if (!session || ui.readOnly || session.role==="superadmin") return;
+  if (MODE==="cloud"){ state._dirty = true; persistLocal(); scheduleSync(); }
+  else persistLocal();
+}
+function scheduleSync(delay){
+  clearTimeout(sync.timer); clearTimeout(sync.retry);
+  setSync("saving");
+  sync.timer = setTimeout(pushNow, delay==null ? 600 : delay);
+}
+async function pushNow(){
+  if (MODE!=="cloud" || !session || session.role==="superadmin") return;
+  if (sync.busy){ sync.again = true; return; }
+  if (!state._dirty){ setSync("saved"); return; }
+  sync.busy = true; sync.again = false;
+  const snapshot = JSON.stringify(payload(state));
+  try {
+    const r = await api("PUT", "/api/data", { rev: sync.rev, data: JSON.parse(snapshot) });
+    if (r.status===401){ sync.busy = false; return sessionExpired(); }
+    const j = await r.json().catch(()=>({}));
+    if (r.status===409){
+      sync.rev = j.rev || 0;
+      state = mergeStates(normalizeState(j.data), state); state._dirty = true;
+      persistLocal(); renderAll(); sync.again = true;
+    } else if (!r.ok){
+      throw new Error(j.error || "Couldn't save.");
+    } else {
+      sync.rev = j.rev; sync.at = j.updatedAt;
+      if (JSON.stringify(payload(state))===snapshot) delete state._dirty; else sync.again = true;
+      persistLocal(); setSync("saved");
+    }
+  } catch(e){
+    setSync("offline", e.message);
+    sync.retry = setTimeout(()=>{ if (state._dirty) scheduleSync(0); }, 15000);
+  } finally {
+    sync.busy = false;
+    if (sync.again) scheduleSync(300);
+  }
+}
+async function pullNow(silent){
+  if (MODE!=="cloud" || !session) return;
+  if (session.role==="superadmin"){ if (!ui.viewing) loadFamily(true); return; }
+  if (sync.busy || state._dirty) return;
+  try {
+    const r = await api("GET", "/api/data");
+    if (r.status===401) return sessionExpired();
+    if (!r.ok) return;
+    const j = await r.json();
+    if ((j.rev||0) !== sync.rev && !state._dirty){
+      sync.rev = j.rev || 0; sync.at = j.updatedAt;
+      state = normalizeState(j.data); persistLocal(); renderAll();
+      if (!silent) toast("Updated with changes from another device");
+    }
+    setSync("saved");
+  } catch(e){ setSync("offline"); }
+}
+function syncText(){
+  if (MODE==="local") return { title:"Demo mode", text:"Saved in this browser only. Deploy to Vercel to sign in from any device." };
+  if (session && session.role==="superadmin") return { title:"Super Admin", text:"You can view every account. Each person edits their own." };
+  if (sync.status==="saving") return { title:"Saving…", text:"Your changes are being saved to your account." };
+  if (sync.status==="offline") return { title:"Not saved yet", text:"No connection right now. Changes are kept on this device and will be saved automatically." };
+  return { title:"Saved to your account", text: sync.at ? `Last saved ${timeAgo(sync.at)}. Sign in on any device to see it.` : "Sign in on any device to see your entries." };
+}
+function setSync(status){
+  sync.status = status;
+  const t = syncText();
+  $("#syncNote").innerHTML = `<b>${esc(t.title)}</b>${esc(t.text)}`;
+  const dot = $("#syncDot");
+  dot.className = "sync-dot " + (MODE==="local" ? "local" : status);
+  const sheet = $("#sheetSync"); if (sheet) sheet.textContent = t.title;
+}
+function timeAgo(iso){
+  const d = (Date.now() - new Date(iso).getTime())/1000;
+  if (!isFinite(d)) return "";
+  if (d < 45) return "just now";
+  if (d < 3600) return Math.round(d/60) + " min ago";
+  if (d < 86400) return Math.round(d/3600) + " h ago";
+  return Math.round(d/86400) + " days ago";
+}
+document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) pullNow(); });
+window.addEventListener("online", ()=>{ if (state._dirty) scheduleSync(0); else pullNow(true); });
+setInterval(()=>{ if (!document.hidden) pullNow(true); }, 45000);
+window.addEventListener("pagehide", ()=>{
+  if (MODE==="cloud" && session && state._dirty && !sync.busy){
+    try { api("PUT", "/api/data", { rev: sync.rev, data: payload(state) }, { keepalive:true }); } catch(e){}
+  }
+});
+
+/* ---------- accounts: sign in & out ---------- */
+let loginPick = null;
+function showLogin(message){
+  document.body.classList.add("signed-out");
+  $("#login").hidden = false;
+  let last = null; try { last = localStorage.getItem(LAST_USER_KEY); } catch(e){}
+  loginPick = loginPick || (ACCOUNTS[last] ? last : "wife");
+  $("#accountList").innerHTML = Object.keys(ACCOUNTS).map(id=>`
+    <button type="button" class="acct" role="radio" aria-checked="${id===loginPick}" data-acct="${id}">
+      <span class="avatar av-${id}">${INITIALS[id]}</span>
+      <span><b>${ACCOUNTS[id].name}</b><small>${ACCOUNTS[id].desc}</small></span>
+    </button>`).join("");
+  $("#pwField").hidden = MODE!=="cloud";
+  $("#loginPw").value = "";
+  $("#loginErr").textContent = message || "";
+  const note = $("#loginNote");
+  note.classList.toggle("err-note", !!(MODE==="cloud" && ui.setupError));
+  note.textContent = MODE==="cloud"
+    ? (ui.setupError || "Each account has its own password. Your entries are saved to your account, so you'll see them on any device.")
+    : "Demo mode: no password needed here, and entries stay in this browser. Once the app is on Vercel, each account signs in with its own password and works on any device.";
+  if (MODE==="cloud") setTimeout(()=>$("#loginPw").focus(), 350);
+}
+function hideLogin(){ $("#login").hidden = true; document.body.classList.remove("signed-out"); }
+$("#accountList").addEventListener("click", e=>{
+  const b = e.target.closest("[data-acct]"); if (!b) return;
+  loginPick = b.dataset.acct;
+  $$("#accountList .acct").forEach(x=>x.setAttribute("aria-checked", String(x===b)));
+  $("#loginErr").textContent = "";
+  if (MODE==="cloud") $("#loginPw").focus();
+});
+$("#accountList").addEventListener("keydown", e=>{
+  if (!["ArrowRight","ArrowDown","ArrowLeft","ArrowUp"].includes(e.key)) return;
+  const ids = Object.keys(ACCOUNTS); let i = ids.indexOf(loginPick);
+  i = (i + (e.key==="ArrowRight"||e.key==="ArrowDown" ? 1 : ids.length-1)) % ids.length;
+  const b = $(`[data-acct="${ids[i]}"]`); b.click(); b.focus(); e.preventDefault();
+});
+$("#pwToggle").addEventListener("click", ()=>{
+  const i = $("#loginPw"), show = i.type==="password";
+  i.type = show ? "text" : "password"; $("#pwToggle").textContent = show ? "Hide" : "Show";
+  $("#pwToggle").setAttribute("aria-label", show ? "Hide password" : "Show password");
+});
+$("#loginForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const id = loginPick, btn = $("#loginBtn");
+  if (!ACCOUNTS[id]){ $("#loginErr").textContent = "Choose an account first."; return; }
+  if (MODE==="cloud"){
+    const pw = $("#loginPw").value;
+    if (!pw){ $("#loginErr").textContent = "Enter the password for " + ACCOUNTS[id].name + "."; $("#loginPw").focus(); return; }
+    btn.classList.add("loading"); btn.textContent = "Signing in ";
+    try {
+      const r = await api("POST", "/api/login", { username:id, password:pw });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) throw new Error(j.error || "Couldn't sign in. Try again.");
+      session = j.user;
+    } catch(err){
+      $("#loginErr").textContent = err.message;
+      const card = $("#loginCard"); card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
+      btn.classList.remove("loading"); btn.textContent = "Sign in";
+      return;
+    }
+    btn.classList.remove("loading"); btn.textContent = "Sign in";
+  } else {
+    session = { id, name:ACCOUNTS[id].name, role:ACCOUNTS[id].role };
+    try { localStorage.setItem(LOCAL_SESSION_KEY, id); } catch(e){}
+  }
+  try { localStorage.setItem(LAST_USER_KEY, id); } catch(e){}
+  await enterApp(true);
+});
+async function enterApp(fresh){
+  ui.viewing = null; ui.readOnly = false; ui.family = null; ui.legacyDismissed = false; ui.view = "";
+  applyRole(); updateNav();
+  if (session.role==="superadmin"){
+    state = freshState();
+  } else {
+    state = load();
+    if (MODE==="cloud"){
+      sync.rev = state._rev || 0;
+      try {
+        const r = await api("GET", "/api/data");
+        if (r.status===401) return sessionExpired();
+        const j = await r.json();
+        const server = j.data ? normalizeState(j.data) : null;
+        if (server && state._dirty) state = Object.assign(mergeStates(server, state), { _dirty:true });
+        else if (server) state = server;
+        else if (hasEntries(state)) state._dirty = true;
+        sync.rev = j.rev || 0; sync.at = j.updatedAt;
+        persistLocal(); setSync("saved");
+        if (state._dirty) scheduleSync(0);
+      } catch(e){ setSync("offline"); }
+    }
+  }
+  setSync(sync.status);
+  resetForm(); resetIncome();
+  $("#fDate").value = defaultDate(); $("#iDate").value = defaultDate(); $("#svDate").value = defaultDate();
+  hideLogin();
+  renderAll();
+  const want = (location.hash||"").slice(1);
+  showView(allowedViews().includes(want) ? want : allowedViews()[0], true);
+  if (fresh) toast(`Signed in as ${session.name}`);
+  if (session.role==="superadmin") loadFamily();
+}
+function sessionExpired(){
+  session = null; ui.viewing = null; ui.readOnly = false;
+  showLogin("You were signed out. Sign in again to keep saving — your unsaved changes are kept on this device.");
+}
+async function signOut(){
+  closeModal();
+  if (MODE==="cloud"){
+    if (state._dirty){ try { await pushNow(); } catch(e){} }
+    try { await api("POST", "/api/logout"); } catch(e){}
+    if (!state._dirty){ try { localStorage.removeItem(storeKey()); } catch(e){} }
+  } else {
+    try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch(e){}
+  }
+  session = null; state = freshState(); ui.viewing = null; ui.readOnly = false; ui.family = null; sync.rev = 0; sync.at = null;
+  applyRole();
+  try { history.replaceState(null, "", location.pathname + location.search); } catch(e){}
+  showLogin();
+}
+
+/* ---------- accounts: account sheet ---------- */
+$("#meBtn").addEventListener("click", ()=>{
+  if (!session) return;
+  const t = syncText();
+  const roleLine = ACCOUNTS[session.id].desc;
+  const html = `
+    <div class="me-head"><span class="avatar lg av-${session.id}">${INITIALS[session.id]}</span><div><b>${esc(session.name)}</b><div class="small">${esc(roleLine)}</div></div></div>
+    <div class="kv"><div>Status</div><div id="sheetSync">${esc(t.title)}</div><div>Where entries are kept</div><div>${MODE==="cloud" ? "Your account (any device)" : "This browser only"}</div></div>
+    ${MODE==="cloud" ? `
+    <h3>Change password</h3>
+    <form class="stack" id="pwForm" novalidate>
+      <div class="field"><label for="pwCur">Current password</label><input class="input" id="pwCur" type="password" autocomplete="current-password"></div>
+      <div class="field"><label for="pwNext">New password</label><input class="input" id="pwNext" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+      <div class="err" id="pwErr"></div>
+      <div><button class="btn btn-primary btn-sm" type="submit">Change password</button></div>
+    </form>` : ""}
+    <div class="row"><button class="btn btn-danger btn-sm" data-signout>${MODE==="cloud" ? "Sign out" : "Switch account"}</button></div>`;
+  openModal("Your account", MODE==="cloud" ? "Signed in" : "Demo mode", html);
+});
+$("#modalBody").addEventListener("click", e=>{ if (e.target.closest("[data-signout]")) signOut(); });
+$("#modalBody").addEventListener("submit", async e=>{
+  if (e.target.id!=="pwForm") return;
+  e.preventDefault();
+  const cur = $("#pwCur").value, next = $("#pwNext").value, err = $("#pwErr");
+  if (next.length < 8){ err.textContent = "Use at least 8 characters for the new password."; return; }
+  try {
+    const r = await api("POST", "/api/password", { current:cur, newPassword:next });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(j.error || "Couldn't change the password.");
+    closeModal(); toast("Password changed. Other devices were signed out.");
+  } catch(x){ err.textContent = x.message; }
+});
+
+/* ---------- accounts: Super Admin family view ---------- */
+async function loadFamily(silent){
+  if (!session || session.role!=="superadmin") return;
+  const fam = {};
+  if (MODE==="cloud"){
+    try {
+      const r = await api("GET", "/api/users");
+      if (r.status===401) return sessionExpired();
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Couldn't load the accounts.");
+      j.users.forEach(u=>{ fam[u.id] = u; });
+    } catch(e){ if (!silent) toast(e.message, "over"); return; }
+  } else {
+    ["wife","husband","child"].forEach(id=>{ fam[id] = { id, name:ACCOUNTS[id].name, role:ACCOUNTS[id].role, data: readJSON(storeKeyFor(id)), updatedAt:null, passwordSet:true }; });
+  }
+  ui.family = fam;
+  if (ui.viewing && fam[ui.viewing.id]){ state = normalizeState(fam[ui.viewing.id].data); renderAll(); }
+  else renderFamily();
+}
+function memberSummary(m){
+  return withState(normalizeState(m.data), ()=>{
+    const cf = cashflow(ui.month), s = summarize(rowsFor(ui.month));
+    return { cf, s, st: budgetStatus(s.paid), budget: state.budget, entries: state.expenses.length + state.incomes.length + state.savings.length };
+  });
+}
+function renderFamily(){
+  if (!session || session.role!=="superadmin") return;
+  const fam = ui.family;
+  $("#familyTitle").textContent = "Accounts · " + monthName(ui.month);
+  $("#pwAdmin").hidden = MODE!=="cloud";
+  if (!fam){ $("#members").innerHTML = `<div class="empty">Loading accounts…</div>`; return; }
+  let I = 0, S = 0, V = 0;
+  const cards = ["wife","husband","child"].map(id=>{
+    const m = fam[id]; if (!m) return "";
+    const x = memberSummary(m); I += x.cf.income; S += x.cf.spent; V += x.cf.saved;
+    const child = m.role==="child";
+    const pillTxt = child ? (x.cf.income ? fmtPct(x.cf.rate)+" saved" : "No income yet") : ({none:"No limit set", ok:"On track", care:"Near limit", over:"Over limit"}[x.st.key]);
+    const pillCls = child ? (x.cf.saved>0 ? "ok" : "none") : x.st.key;
+    const meter = (!child && x.budget) ? `<div class="meter"><div class="meter-track"><div class="meter-fill ${x.st.key==="over"?"over":x.st.key==="care"?"care":""}" style="transform:scaleX(${Math.min(1,x.st.ratio)})"></div></div><div class="meter-scale num"><span>${fmtPct(x.st.ratio)} of limit</span><span>${money(x.budget)}</span></div></div>` : "";
+    return `<article class="member">
+      <div class="member-top"><span class="avatar av-${id}">${INITIALS[id]}</span><div><h3>${esc(m.name)}</h3><p class="small">${m.updatedAt ? "Updated "+timeAgo(m.updatedAt) : (x.entries ? "Saved on this device" : "No entries yet")}${m.passwordSet===false ? " · no password set" : ""}</p></div><span class="pill ${pillCls}">${pillTxt}</span></div>
+      <div class="member-nums">
+        <div><span>Income</span><b>${money(x.cf.income)}</b></div>
+        ${child ? "" : `<div><span>Spending</span><b>${money(x.cf.spent)}</b></div>`}
+        <div><span>Savings</span><b>${money(x.cf.saved)}</b></div>
+        <div><span>${x.cf.left<0?"Short by":"Left over"}</span><b style="color:${x.cf.left<0?"var(--over)":"var(--ok)"}">${money(Math.abs(x.cf.left))}</b></div>
+      </div>
+      ${meter}
+      <button class="btn btn-ghost btn-sm" data-open-member="${id}">Open ${esc(m.name)}'s ledger</button>
+    </article>`;
+  }).join("");
+  $("#members").innerHTML = cards;
+  countTo($("#fIncome"), I, money); countTo($("#fSpent"), S, money); countTo($("#fSaved"), V, money);
+  $("#fIncomeNote").textContent = "Wife, Husband and Child combined";
+  $("#fSpentNote").textContent = I ? fmtPct(pct(S,I)) + " of family income" : "—";
+  $("#fSavedNote").textContent = I ? fmtPct(pct(V,I)) + " of family income" : "—";
+  const sel = $("#pwUser"), cur = sel.value;
+  sel.innerHTML = ["wife","husband","child"].map(id=>`<option value="${id}">${ACCOUNTS[id].name}</option>`).join(""); if (cur) sel.value = cur;
+}
+$("#members").addEventListener("click", e=>{ const b = e.target.closest("[data-open-member]"); if (b) openMember(b.dataset.openMember); });
+$("#familyRefresh").addEventListener("click", ()=>{ loadFamily(); toast("Accounts refreshed"); });
+function openMember(id){
+  const m = ui.family && ui.family[id]; if (!m) return;
+  ui.viewing = { id, name:m.name, role:m.role }; ui.readOnly = true;
+  state = normalizeState(m.data);
+  applyRole(); updateNav(); renderAll();
+  go("dashboard");
+  window.scrollTo({ top:0, behavior: reduceMotion ? "auto" : "smooth" });
+}
+function exitMember(){
+  ui.viewing = null; ui.readOnly = false; state = freshState();
+  applyRole(); updateNav(); renderAll(); go("family");
+  loadFamily(true);
+}
+$("#exitViewing").addEventListener("click", exitMember);
+$("#pwAdminForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const user = $("#pwUser").value, pw = $("#pwNew").value, note = $("#pwAdminNote");
+  if (pw.length < 8){ note.textContent = "Use at least 8 characters."; note.style.color = "var(--over)"; return; }
+  try {
+    const r = await api("POST", "/api/password", { username:user, newPassword:pw });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(j.error || "Couldn't set the password.");
+    $("#pwNew").value = ""; note.style.color = "var(--ok)";
+    note.textContent = `New password set for ${ACCOUNTS[user].name}. They've been signed out on every device.`;
+    loadFamily(true);
+  } catch(x){ note.style.color = "var(--over)"; note.textContent = x.message; }
+});
+
+/* ---------- accounts: entries saved before accounts existed ---------- */
+function legacyState(){ const raw = readJSON(LEGACY_KEY); const st = raw ? normalizeState(raw) : null; return st && hasEntries(st) ? st : null; }
+function renderLegacy(){
+  const banner = $("#legacyBanner");
+  const leg = (!session || session.role==="superadmin" || ui.readOnly || ui.legacyDismissed) ? null : legacyState();
+  banner.hidden = !leg;
+  if (leg) $("#legacyText").textContent = `This browser has ${plural(leg.expenses.length,"expense")}, ${leg.incomes.length} income and ${leg.savings.length} savings ${leg.savings.length===1?"entry":"entries"} from before accounts existed. Move them into ${session.name}'s account?`;
+}
+$("#legacyMove").addEventListener("click", ()=>{
+  const leg = legacyState(); if (!leg) return;
+  const budget = state.budget || leg.budget;
+  state = Object.assign(mergeStates(state, leg), { budget, target: state.target, currency: state.currency, sources: state.sources });
+  save();
+  try { localStorage.removeItem(LEGACY_KEY); } catch(e){}
+  renderAll(); toast(`Moved into ${session.name}'s account`);
+});
+$("#legacyDismiss").addEventListener("click", ()=>{ ui.legacyDismissed = true; renderLegacy(); });
+
 /* ---------- boot ---------- */
-$("#fDate").value = defaultDate(); $("#iDate").value = defaultDate(); $("#svDate").value = defaultDate();
-renderAll();
-$("#hideEmpty").checked = ui.hideEmpty; renderDailyView();
-showView((location.hash||"").slice(1) || "dashboard", true);
-labelTables();
-renderDaily(true);
+$("#hideEmpty").checked = ui.hideEmpty;
+(async function boot(){
+  await detectMode();
+  setSync("saved");
+  if (session) await enterApp(false); else showLogin();
+  labelTables();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(positionPill);
+})();
+
 window.__ledger = { cashflow, summarize, dayTable, estimateLines, parseAmount, state:()=>state };
 })();
