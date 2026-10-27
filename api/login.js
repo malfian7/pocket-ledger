@@ -14,7 +14,10 @@ module.exports = route({
     if (!(await checkPassword(user, password))) {
       await redis("INCR", failKey);
       await redis("EXPIRE", failKey, LOCK_SECONDS);
-      throw new HttpError(401, "That password isn't right. Check it and try again.");
+      const left = MAX_FAILS - fails - 1;
+      throw new HttpError(401, left > 0
+        ? `That password isn't right. Passwords are case-sensitive. ${left} tries left before a 15-minute pause.`
+        : "That password isn't right. Sign-in is paused for 15 minutes.");
     }
     await redis("DEL", failKey);
     await issueSession(req, res, user);

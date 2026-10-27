@@ -1462,6 +1462,7 @@ function showLogin(message){
       <span><b>${ACCOUNTS[id].name}</b><small>${ACCOUNTS[id].desc}</small></span>
     </button>`).join("");
   $("#pwField").hidden = MODE!=="cloud";
+  $("#setupCheckBtn").hidden = MODE!=="cloud"; $("#setupList").hidden = true;
   $("#loginPw").value = "";
   $("#loginErr").textContent = message || "";
   const note = $("#loginNote");
@@ -1471,6 +1472,24 @@ function showLogin(message){
     : "Demo mode: no password needed here, and entries stay in this browser. Once the app is on Vercel, each account signs in with its own password and works on any device.";
   if (MODE==="cloud") setTimeout(()=>$("#loginPw").focus(), 350);
 }
+async function runSetupCheck(){
+  const list = $("#setupList");
+  list.hidden = false; list.innerHTML = `<div class="setup-item"><span>Checking…</span></div>`;
+  let j;
+  try { const r = await fetch("/api/health", { cache:"no-store" }); j = await r.json(); }
+  catch(e){ list.innerHTML = `<div class="setup-item bad"><span class="setup-mark">!</span><div><b>Couldn't reach the server</b><span>Check your internet connection and try again.</span></div></div>`; return; }
+  const item = (cls, mark, title, text) => `<div class="setup-item ${cls}"><span class="setup-mark">${mark}</span><div><b>${esc(title)}</b><span>${esc(text)}</span></div></div>`;
+  let html = item(j.database.ok ? "" : "bad", j.database.ok ? "✓" : "!", "Database", j.database.message);
+  html += item("", "✓", "Session secret", j.sessionSecret);
+  Object.keys(j.accounts).forEach(id=>{
+    const a = j.accounts[id];
+    if (a.locked) html += item("warn", "!", a.name, "Paused after too many wrong passwords. Wait 15 minutes, then try again.");
+    else if (a.password==="missing") html += item("bad", "!", a.name, `No password yet. Add ${a.variable} in Vercel → Settings → Environment Variables, then redeploy.`);
+    else html += item("", "✓", a.name, "Password " + a.password + ".");
+  });
+  list.innerHTML = html;
+}
+$("#setupCheckBtn").addEventListener("click", runSetupCheck);
 function hideLogin(){ $("#login").hidden = true; document.body.classList.remove("signed-out"); }
 $("#accountList").addEventListener("click", e=>{
   const b = e.target.closest("[data-acct]"); if (!b) return;
@@ -1505,6 +1524,7 @@ $("#loginForm").addEventListener("submit", async e=>{
       session = j.user;
     } catch(err){
       $("#loginErr").textContent = err.message;
+      $("#setupCheckBtn").hidden = false;
       const card = $("#loginCard"); card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
       btn.classList.remove("loading"); btn.textContent = "Sign in";
       return;

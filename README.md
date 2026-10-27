@@ -35,7 +35,7 @@ vercel.json           Vercel settings (clean URLs, security headers)
 
 | Name | What to put |
 |---|---|
-| `SESSION_SECRET` | A long random string (32+ characters). It signs sign-in cookies. |
+| `SESSION_SECRET` | Optional. If it's missing or shorter than 16 characters, the app creates its own secret and keeps it in the database. |
 | `SUPERADMIN_PASSWORD` | Starting password for Super Admin |
 | `WIFE_PASSWORD` | Starting password for Wife |
 | `HUSBAND_PASSWORD` | Starting password for Husband |
@@ -87,17 +87,22 @@ git push -u origin main
 3. Isi pengaturannya:
    - **Framework Preset**: `Other`
    - **Build Command** dan **Output Directory**: kosongkan
-4. Buka bagian **Environment Variables** dan tambahkan 5 variabel ini:
+4. Buka bagian **Environment Variables** dan tambahkan 4 variabel ini:
 
-   | Name | Value |
+   | Name (Key) | Value |
    |---|---|
-   | `SESSION_SECRET` | Teks acak panjang, minimal 32 karakter (campuran huruf dan angka) |
    | `SUPERADMIN_PASSWORD` | Password untuk Super Admin |
    | `WIFE_PASSWORD` | Password untuk Wife |
    | `HUSBAND_PASSWORD` | Password untuk Husband |
    | `CHILD_PASSWORD` | Password untuk Child |
 
-   Pakai password minimal 8 karakter, dan jangan sama dengan password email atau bank.
+   Cara mengisinya:
+   - Kolom **Key** diisi nama variabel persis seperti di tabel, huruf besar semua (misalnya `WIFE_PASSWORD`).
+   - Kolom **Value** diisi passwordnya saja, **tanpa** tanda kutip dan tanpa `WIFE_PASSWORD=` di depannya.
+   - Pastikan **Production** ikut dicentang.
+   - Password membedakan huruf besar dan kecil. Pakai minimal 8 karakter, dan jangan sama dengan password email atau bank.
+
+   `SESSION_SECRET` **tidak perlu diisi**. Aplikasi membuatnya sendiri.
 5. Klik **Deploy**.
 
 ### 3. Sambungkan database (Upstash Redis)
@@ -113,7 +118,9 @@ Database ini yang membuat data bisa dibuka dari device mana pun.
 
 Buka alamat Vercel Anda (misalnya `pocket-ledger.vercel.app`), pilih akun, lalu masukkan password yang tadi Anda isi.
 
-- Kalau muncul pesan bahwa database belum tersambung atau `SESSION_SECRET` belum ada, cek lagi langkah 2 dan 3, lalu Redeploy.
+- Kalau gagal masuk, klik **Having trouble signing in? Check setup** di bawah tombol Sign in. Di situ terlihat apakah database sudah tersambung dan password tiap akun sudah terbaca.
+- **Setiap kali mengubah Environment Variables, lakukan Redeploy.** Tanpa Redeploy, nilai baru tidak terbaca.
+- Setelah 10 kali salah password, akun itu dijeda 15 menit.
 - Setelah login, password bisa diganti lewat avatar di kanan atas. Super Admin bisa mengganti password akun lain di halaman **Family**. Setelah diganti, password di Environment Variables tidak dipakai lagi untuk akun itu.
 
 ### 5. Pasang di HP (opsional)

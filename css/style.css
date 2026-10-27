@@ -753,3 +753,13 @@ table{min-width:640px}
 
 .login-brand .brand-name,.login-brand .brand-sub{display:block!important}
 .pill{white-space:nowrap}
+
+.link-btn{margin-top:10px;border:0;background:none;padding:6px 0;color:var(--teal);font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.setup-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;animation:rise .35s var(--ease-out) both}
+.setup-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--pane-strong);box-shadow:0 0 0 1px var(--hair);font-size:13px;line-height:1.45}
+.setup-item b{display:block;font-size:13px}
+.setup-item span{color:var(--ink-3)}
+.setup-mark{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;background:var(--ok-soft);color:var(--ok)}
+.setup-item.bad .setup-mark{background:var(--over-soft);color:var(--over)}
+.setup-item.warn .setup-mark{background:var(--care-soft);color:var(--care)}
+@media (prefers-reduced-motion: reduce){.setup-list{animation:none}}

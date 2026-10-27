@@ -37,20 +37,33 @@ async function redis(...command) {
 }
 
 /* ---------- sessions (HMAC-signed, HttpOnly cookie) ---------- */
-function secret() {
-  const s = process.env.SESSION_SECRET;
-  if (!s || s.length < 16) throw new HttpError(500, "SESSION_SECRET is missing or shorter than 16 characters. Add it in Vercel → Settings → Environment Variables, then redeploy.");
-  return s;
+// Values pasted into Vercel often carry stray spaces, line breaks or quotes. Strip them.
+function clean(v) { return String(v == null ? "" : v).trim().replace(/^["'`]+|["'`]+$/g, "").trim(); }
+
+// SESSION_SECRET is optional. If it's missing or too short, a random secret is
+// generated once and kept in the database, so sign-in works without any setup.
+let cachedSecret = null;
+function envSecret() { const s = clean(process.env.SESSION_SECRET); return s.length >= 16 ? s : ""; }
+async function secret() {
+  if (cachedSecret) return cachedSecret;
+  const fromEnv = envSecret();
+  if (fromEnv) return (cachedSecret = fromEnv);
+  let stored = await redis("GET", "pl:secret");
+  if (!stored) {
+    await redis("SET", "pl:secret", crypto.randomBytes(48).toString("base64url"), "NX");
+    stored = await redis("GET", "pl:secret");
+  }
+  return (cachedSecret = String(stored));
 }
-function sign(payload) {
+async function sign(payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const mac = crypto.createHmac("sha256", secret()).update(body).digest("base64url");
+  const mac = crypto.createHmac("sha256", await secret()).update(body).digest("base64url");
   return body + "." + mac;
 }
-function verify(token) {
+async function verify(token) {
   if (!token || token.indexOf(".") < 0) return null;
   const [body, mac] = token.split(".");
-  const expected = crypto.createHmac("sha256", secret()).update(body).digest("base64url");
+  const expected = crypto.createHmac("sha256", await secret()).update(body).digest("base64url");
   const a = Buffer.from(mac || ""), b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
@@ -80,10 +93,10 @@ function clearSession(req, res) {
 async function passwordVersion(user) { return Number(await redis("GET", `pl:pwv:${user}`) || 0); }
 async function issueSession(req, res, user) {
   const v = await passwordVersion(user);
-  setSession(req, res, sign({ u: user, v, exp: Date.now() + MAX_AGE * 1000 }));
+  setSession(req, res, await sign({ u: user, v, exp: Date.now() + MAX_AGE * 1000 }));
 }
 async function currentUser(req) {
-  const p = verify(readCookies(req)[COOKIE]);
+  const p = await verify(readCookies(req)[COOKIE]);
   if (!p || !ACCOUNTS[p.u]) return null;
   if ((await passwordVersion(p.u)) !== p.v) return null; // password changed since sign-in
   return publicUser(p.u);
@@ -103,10 +116,12 @@ async function hashPassword(pw) {
   const salt = crypto.randomBytes(16).toString("hex");
   return salt + ":" + (await scrypt(pw, salt)).toString("hex");
 }
-function envPassword(user) { return process.env[`${user.toUpperCase()}_PASSWORD`] || ""; }
+function envPassword(user) { return clean(process.env[`${user.toUpperCase()}_PASSWORD`]); }
 async function hasPassword(user) { return !!(await redis("GET", `pl:pw:${user}`)) || !!envPassword(user); }
 async function checkPassword(user, pw) {
-  if (typeof pw !== "string" || !pw) return false;
+  if (typeof pw !== "string") return false;
+  pw = pw.trim();
+  if (!pw) return false;
   const stored = await redis("GET", `pl:pw:${user}`);
   if (stored) {
     const [salt, hash] = String(stored).split(":");
@@ -121,7 +136,7 @@ async function checkPassword(user, pw) {
   return crypto.timingSafeEqual(a, b);
 }
 async function setPassword(user, pw) {
-  await redis("SET", `pl:pw:${user}`, await hashPassword(pw));
+  await redis("SET", `pl:pw:${user}`, await hashPassword(String(pw).trim()));
   await redis("INCR", `pl:pwv:${user}`); // signs out every other device
 }
 
@@ -163,6 +178,7 @@ function route(methods) {
 }
 
 module.exports = {
+  clean, envSecret, envPassword, redisConfig,
   ACCOUNTS, MEMBERS, HttpError, redis, issueSession, clearSession, currentUser, requireUser, publicUser,
   checkPassword, setPassword, hasPassword, readData, writeData, send, readBody, route
 };
